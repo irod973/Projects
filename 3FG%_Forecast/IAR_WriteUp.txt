@@ -1,0 +1,139 @@
+'''
+Author: Irving Rodriguez
+File: 3FG Forecast Notes
+Description: Write-up for methodology of forecasting 3-point field goal percentage for all players in the NBA in the 2014-2015 seaseon using data from previous seasons.
+'''
+### PLAN
+
+It seems difficult (and perhaps even unrealistic) to expect a one-size-fits-all model to predict 3FG%. Moreover, with the high variance observed in 3FG analyses, a deterministic model seems inappropriate as we would have no way of knowing just how noisy the prediction for a certain player is.
+
+We have to ask: What makes a good shooter? We want a player that consistently outperforms the average player. One such way of measuring this consistency is through yearly changes in 3FG%. As such, we may be able devise a model that looks at the change in 3FG% throughout a player's career and predicts their change for next season given how they compare to the average NBA player from one season to the next. By simulating this change as a Normal random variable, we'll be able to obtain a variance and construct a 95% confidence interval for our predicted 3FG%.
+
+Ideally, we want to compare players to an "average" player with as many similarities as possible to control for confounding variables. For instance, when predicting Brandon Knight's 3FG% for next season, we'd like to compare Knight to the average 23 year old point guard instead of comparing him to the average 35 year old center. Because we are looking at a player's development throughout their career, we need to examine whether age or years of experience is a better chronological proxy to use in our comparison.
+
+Our method is as follows: For each position, look at the average change in 3FG% vs. age and years of experience. Run a linear regression to find the change curve for the "average" player by position. We can use this linear model as a baseline to compare a player's career changes. Consequently, we can alter the expected change for the player's next season based on how well they've performed against the change curve throughout their careers - players who, on average, improve more compared to their peers (or avoid regressing) can be expected to do so the following season. Using this expected change, we can predict the player's 3FG% based on their age or years of experience in the upcoming season.
+
+### DATA
+
+I built a database using Basketball-Reference's League Index (link in References). I also used their NBA/ABA Player Directory since the League Index does not include each player's rookie year. The directory data can thus be used to appropriately calculate the years of experience of those players who debuted before the 1979-1980.
+
+The League Index gives us regular season stats totals for every player in the NBA for a given season. I consolidated every season from 1979-1980 until 2014-2015 into a csv file. The first row of the file contains the headers for each of the stats. 
+
+### METHODS
+
+Step 1: Building the R Dataframe (seasonIndexBuilder.R)
+
+The League Index data includes player age (on Feb. 1 for a given season) but has no info on years of experience. We can assume that the first listing for each player is their rookie year and calculate their years of experience by subtracting their age as a rookie from their age in a given season.
+
+The seasonIndexBuilder does this calculation for every player in the listed seasons. It reads the seasonIndex file (seasonStats_3FGEra.csv) into an R dataframe and appends the results for each season onto the dataframe. In addition, it calculates change in 3FG% for a given season as (3FG% in current season - 3FG% in previous season) and appends these results to the dataframe as well. It writes the dataframe as a csv file, IAR_seasonIndex3FGEra.
+
+(Rookies presented several edge cases. For one, we had to decide how to define change in 3FG% for rookie year. Ultimately chose NA (R's undefined value), because the previous season is indeed not defined. This doesn't impact the calculated change in their sophomore season as their rookie 3FG% is unaffected.)
+
+Step 2: Analyzing the Data (3FG%Forecast.R)
+
+For each of the 5 positions (PG, SG, SF, PF, C), we look at change in 3FG% vs. age and years of experience using all season stats dating back to 1979-1980. To cut out some noise, we only look at individual seasons where the player attempted more than 50 3-point field goals. (Figure 1)
+
+For each distinct age and YoE, we average all of the matching delta3FG% using both a weighted and unweighted arithmetic mean. Based on Daryl Blackport's analysis on noise and 3FG%, we use 3FGA as weights for each delta3FG%. The rationale: As attempts increase, the variance on 3FG% decreases. Thus, a delta3FG% measured for a season where the player attempted 500 treys speaks more to skill than noise compared to a season with 100 attempts. We weight by attempts to (hopefully) increase our signal-to-noise.
+
+Next, we run a linear regression using the linear model,
+
+delta3FG% = Beta * (Age or YoE) + Intercept
+
+on both the unweighted and weighted averages. The linear regressions are weighted least squares, where the weights are the variance of the delta3FG%'s for a given age/YoE. (Figure 2)
+
+For every player in the current NBA season, we forecast their 3FG% for next season as follows, using both age and years of experience:
+
+Calculate the average difference between the player's career changes in 3FG% for each age/year and their corresponding regression line (based on position). Predict the upcoming season's change in 3FG% as the difference between the average difference and the next age/YoE point on the regression line. 
+
+Some slight detail: We model the predicted delta3FG% as a Gaussian distribution with mean equal to the predicted delta and variance also equal to predicted delta. We justify this variance from Blackport's analysis: he concludes that, at 750 FGA, 50% of the variance in 3FG% is due to statistical noise. Using this .5 as a lower bound (no player has ever taken more than 750 FGA in a season), and that the variance of the difference between two random variables is the sum of their individual variances, we get .5 delta3FG% + .5 delta3FG% = delta3FG% as the variance for delta.
+
+Drawing 10,000 samples from this distribution, we have an expected value for delta3FG% as well the standard deviation for the sample population. Our 95% confidence interval for our forecasted 3FG% is
+
+current season's 3FG% + (predictedDelta +/- 2 standard deviations from predictedDelta)
+
+We run this forecast model on every player in the current season using both the age and year regressions. We write both results to corresponding files and check how many players' 3FG% in 2014-2015 fell within their predicted 95% confidence interval from their 2013-2014 percentages.
+
+### RESULTS
+
+Graphical results are attached as PDF, IAR_PredictionResults.
+
+The predictions for 3FG% for the 2014-2015 season are also attached as two .csv files, IAR_3FG%Prediction_Years and IAR_3FG%Prediction_Age. These two files were sorted in Excel according to the mean predicted 3FG% (Column E, descending order) and filtered for players with >100 FGA. For comparison, two corresponding files that were filtered for players with >50 FGA are also included with the suffix "50". (see discussion below). 
+
+### DISCUSSION
+
+The first thing to note about the model is its success rate. For predictions for players with >100 3FGA in 2013-2014, we see that 54.7% and 55.8% of the 2014-2015 3FG% fell within their 95% confidence interval for the YoE and Age analyses, respectively. Given that we observe several large confidence intervals, we would hope to observe more successes (Gerald Green offers a good example of a wide interval that counts as a failure to capture the 14-15 %).
+
+Secondly, the model is highly dependent on the current season's 3FG%. The top of the list, in particular, has players who had remarkable 3-point seasons and are thus projected highly (Khris Middleton). Because the model goes off the raw 3FG% (as opposed to an adjusted % to tame the more unsustainable seasons), it rewards standout seasons more than it should.
+
+There are also some notable outliers, particularly in the confidence intervals. We see, for example, Mike Scott with a lower bound of .061 and an upper bound of 1.06. This is due entirely to his high predicted change, which arises from his jump from 0.0 his rookie year to a .310 3FG% in his sophomore campaign, putting his delta at .310. 
+
+The model's top 50 certainly catches plenty of names that we would recognize as quality shooters from deep. We see the likes of Mike Dunleavy, Kevin Love, Marco Belinelli, and Dirk Nowitzki, among others. Though the order of the results does not match well with the order according to 14-15 percentages, we do see a good mix of guards, wings, and forwards alike in the top 50. I myself was expecting a sizeable amount of noise (overestimating predicted delta) in the population of bigs given the relatively smaller amount of historical shooting data available for stretch forwards and centers (as evidenced by the regression plots in both delta vs year and delta vs age), but that doesn't necessarily appear to be the case.
+
+Additionally, it is clear that not all mean predictions have equal uncertainty. Jose Calderon's 95% confidence interval is [.441, .473], whereas PJ Tucker's is [.339, .53].
+
+An interesting observation regarding the high variance in predicting 3FG%: the results look drastically different when predicting for players with >50 3FGA in 13-14 versus >100 3FGA. Diante Garrett, Anthony Randolph, and Darrell Arthur are all in the top 15 in the >50 list, but are filtered out in the >100 list. See 3 below.
+
+Several of these shortcomings can be explained by some of the weaknesses of the model. Ranking them from most to least severe: 
+
+1) Variance of delta3FG%
+We made a gross underestimate in setting the variance of delta equal to 1. The .5 figure from Blackport is just a lower bound, and (as previously mentioned) is only accurate as you approach 750 3FGA (which not many people do). The model is consequently underestimating noise and hence the confidence intervals should be bigger than they are. This is troubling for our results that only captured a little over half the players in their intervals.
+
+2) Mispositioning
+The current positions that we use may not be correctly pitting players against a comparable "average" peer. Russell Westbrook is a good example of this. Computing his predicted delta using data from John Stockton, Steve Nash, etc seems to be comparing two very different styles of play. Though our mean predicted 3FG% for Westbrook was close to its target (difference of .003), his low 14-15 percentage could maybe be better explained by his increased usage rate with Durant's injury woes and less to his skill as a shooter. Alagappan's expansion into 13 "positions" could possibly reduce the noise in predicting a player's delta by more accurately representing his average difference between his "position"'s change curve and his career changes.
+
+3) Arbitrarily chosen threshold for 3FGA
+I chose to filter the season index by only using players with >50 3FGA to calculate the means for each age/YoE. However, as evidenced by the difference between the two results lists (50 vs 100 3FGA), there can be a LOT of noise introduced by choosing too low a cut-off. A more rigorous way of determining an appropriate threshold could decrease the variance in the final predictions, especially in the predicted delta.
+
+4) Linear fit has weak correlation
+Change in 3FG% is weekly correlated with age and years of experience. All of the positions show an r-value ~.4 between delta (using the weighted average for each age/year slice) and age/year. Some of the weak correlation may be attributed to mispositioning since we include a wide variety of players in each position (and thus may have an average change with a high variance), but the change in a player's 3FG% could perhaps be better explained by other variables.
+
+
+If given more time, there are several ways we could improve the model:
+
+1) Explore a way of re-categorizing players historically to see if this yields a more precise regression line. Test this further by comparing residual plots (weighted averages - regression line) of traditional positions against those with the new positions and checking the value of Chi-Squared for the two fits.
+
+2) More error analysis. 
+With so many places to introduce statistical noise and increase the variance of our results, it's important to look at possible sources of error more closely, both systematic and statistical. 
+
+i. Examine the distributions of delta3FG% for every given year and age - are these generally skewed in one direction? Instead of using a weighted mean, would a median be a less biased measure to use in the regression?
+
+ii. Examine the effect of weighting the mean delta3FG% for a given year/age using 3FGA. Blackport's analysis is subtle, and it may not be the case that the player with 200 3FGA has less noise on his delta3FG% than the player with 80. 
+
+3) Expand/Improve the model using more sophisticated data
+This model doesn't account for any other variable outside of 3FG%, which is very simplistic considering the direction that basketball is taking.
+
+i. Use SportVU data to better predict a player's delta for the upcoming season. We can look at the types of shots a player is taking (a contested 3 off the dribble with little time in the shot clock vs. an uncontested pull-up corner 3), how many of their 3s are assisted vs. unassisted, the "gravity" of other players on the court, among other things, to develop a more realistic picture of 3FG% and award players some points in predicted 3FG% if we can better predict what kind of 3s they're getting based on their past performance.
+
+ii. Shot Quality: Chang et. al. gave a great analysis on how we can quantify shooting skill better than before. Our model, for example, doesn't take into account the higher level of difficulty of shots that Steph Curry takes compared to someone like Trevor Ariza (who gets tons of assists from Harden). As in i., this could help build a more hollistic player profile that tells us how much of career changes in 3FG% are due to the player's skill
+
+ii. Use other metrics that quantify a team's offensive scheme and their emphasis on 3 pointers. If you're Jordan Clarkson, you should probably get some points docked from your 3FG% based on Byron Scott's reluctance to embrace the 3, whereas you should get a few more if you're Danny Green because of Popovich's pass-happy offense.
+
+4) Go through the code and handle special cases more elegantly, like Mike Scott's.
+
+5) This could be a project of its own, but results are nothing if they are not properly communicated. As they stand now, the results are probably not the easiest thing to parse through if you're an assistant or an administrator looking to quickly understand what's in front of you. Better data-visualization would go a long way: If the results could be color-coded to show surprising results, players with a relatively higher predicted 3FG%, free-agents vs. contract players, etc., they would communicate much more information than they do in their raw form.
+
+### CONCLUSION
+
+Predicting 3-point percentage requires very careful treatment of noise. Though this probabilistic approach of predicting 3FG% based on a player's previous track record showed some unremarkable results, there is a lot of room for improvement and tackling this forecast probabilistically allows for close interaction with the sources of noise that arise when forming the prediction model. For instance, if the confidence intervals presented here were more accurate (and had smaller variances), could we distinguish certain patterns that give insight into the intrinsically noisy aspects of three point shooting? Would we observe that it's more difficult to forecast for younger players, given that we haven't seen too much of how they improve/regress compared to more experienced players? Could we successfully predict how an NBA player's 3FG% would change based on a smart comparison to other players with similar playing styles and careers?
+
+As our understanding of three-point shooting, spacing, and quality of data improve, so should our ability to build accurate prediction models that account for the uncertainty in shooting.
+
+### REFERENCES
+
+Basketball-Reference League Index: 
+http://www.basketball-reference.com/leagues/
+
+Basketball-Reference Player Directory:
+http://www.basketball-reference.com/players/
+
+Effective Shot Quality, Yu-Han Chang et. al
+http://www.sloansportsconference.com/wp-content/uploads/2014/02/2014-SSAC-Quantifying-Shot-Quality-in-the-NBA.pdf
+
+Stability of 3FG%, Darryl Blackport
+http://nyloncalculus.com/2014/08/29/long-take-three-point-shooting-stabilize/
+
+Redifining Positions in Basketball, Muthu Alagappan
+http://www.sloansportsconference.com/wp-content/uploads/2012/03/Alagappan-Muthu-EOSMarch2012PPT.pdf
+
+Value of NBA Coaches, Kirk Goldsberry
+http://grantland.com/the-triangle/the-sons-of-pop-and-the-zen-master-its-time-to-properly-measure-the-value-of-nba-coaches/
