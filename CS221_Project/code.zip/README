@@ -1,0 +1,25 @@
+######
+# File: README
+# Author: Irving Rodriguez
+# Description: Contains information on code used for CS221 Fall 2016 final project.
+######
+
+FILES CONTAINED:
+
+data_explore.py
+
+data_preprocess.py
+
+lstm_model.py
+
+hp_tuning.py
+
+hp_tuning_results.py 
+
+opt_training.py
+
+FILE PIPELINE:
+
+data_preprocess -> hp_tuning -> hp_tuning_results.py -> opt_training
+
+Directions for running each file are written in respective file descriptions. Files should run completely if Tensorflow is installed correctly. The data need only be downloaded from code.org/research and put in the same directory as the files. Preprocessed data should appear in subdirectories listed in data_preprocess, which is contained in global variables in the remainder of the files.
