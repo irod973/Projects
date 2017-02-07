@@ -7,6 +7,7 @@ Description: This program takes a player's name from the 2013-2014 NBA season as
 import json
 from nbaPlayer import Player
 from pprint import pprint
+import numpy as np  # Test merge
 
 #JSON files containing player statistics for the 2013-2014 NBA season in Python dictionaries.
 
