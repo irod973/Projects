@@ -8,7 +8,7 @@ class Player():
 
 	##The player's properties are name and a dictionary containing that player's statistics. 
 	def __init__(self, statsMap, name):
-		self.name = name
+		self.name = name + " is name"
 		self.data = statsMap
 
 	def calcPGP(self):
